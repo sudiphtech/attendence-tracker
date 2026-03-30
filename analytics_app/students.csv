@@ -1,8 +1,8 @@
-Student_ID,Full_Name,Date_of_Birth,Grade_Level,Emergency_Contact,
-S00001,Sudip Bandyopadhyay,08-04-2005,Btech-cse,781-534-4258x9046,6297421892
-S00002,Gaurav Kumar,01-01-2005,Btech-cse,+1-782-691-6291x99704,6204608428
+Student_ID,Full_Name,Date_of_Birth,Grade_Level,Emergency_Contact,Secondary_Contact
+S00001,Sudip Bandyopadhyay,08-04-2005,Btech-cse,781-534-4258x9046,6297421892.0
+S00002,Gaurav Kumar,01-01-2005,Btech-cse,+1-782-691-6291x99704,6204608428.0
 S00003,Sudip Poddar,07-02-2017,Grade 3,308.517.3750,
-S00004,Anthony Martin,11-10-2014,Grade 5,306-771-1524x116,
+S00004,Rohit Rajak,11-10-2014,Grade 5,306-771-1524x116,
 S00005,Mary Stone,04-01-2016,Grade 3,+1-794-484-8495x7772,
 S00006,Joe Wells,29-06-2017,Grade 2,+1-933-864-5644x501,
 S00007,Margaret Nixon,04-12-2009,Grade 4,706.708.0421x412,

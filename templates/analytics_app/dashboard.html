@@ -61,6 +61,16 @@
       font-weight: 700;
       box-shadow: 0 12px 24px rgba(13, 110, 110, 0.18);
     }
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .top-link.alt {
+      background: transparent;
+      color: var(--accent);
+      box-shadow: none;
+    }
     .top-link::after {
       content: "\2192";
       font-size: 1rem;
@@ -171,7 +181,10 @@
       <div>
         <h1>Attendance Dashboard</h1>
       </div>
-      <a class="top-link" href="{% url 'predict_form' %}">Open Risk Predictor</a>
+      <div class="hero-actions">
+        <a class="top-link alt" href="{% url 'chatbot_page' %}">Open Chatbot</a>
+        <a class="top-link" href="{% url 'predict_form' %}">Open Risk Predictor</a>
+      </div>
     </div>
 
     <div class="card">

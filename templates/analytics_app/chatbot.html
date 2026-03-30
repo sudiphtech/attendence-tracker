@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EduConnect Chatbot</title>
+  <style>
+    :root {
+      --bg: #f6f3ea;
+      --card: rgba(255, 253, 248, 0.94);
+      --ink: #1d2a2f;
+      --muted: #667176;
+      --line: #d8d1c2;
+      --accent: #0d6e6e;
+      --accent-soft: #d8ece8;
+      --user: #113c49;
+      --user-soft: #d9eef2;
+      --danger: #b42318;
+      --danger-soft: #fde8e8;
+      --shadow: 0 20px 50px rgba(34, 39, 29, 0.1);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(232, 220, 191, 0.85), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(193, 228, 221, 0.9), transparent 28%),
+        linear-gradient(180deg, #faf7f0 0%, var(--bg) 100%);
+    }
+
+    .shell {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 36px 20px 56px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 0.95fr 1.05fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .intro {
+      padding: 34px;
+      background:
+        linear-gradient(135deg, rgba(13, 110, 110, 0.08), transparent 58%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 253, 248, 0.96));
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 16px 0 12px;
+      font-size: clamp(2rem, 4vw, 3.1rem);
+      line-height: 1.05;
+    }
+
+    .lead,
+    .tip {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .tip-list {
+      margin: 24px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .tip-list li {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.78);
+    }
+
+    .chat-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 680px;
+    }
+
+    .chat-head {
+      padding: 24px 28px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .top-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .top-link::before {
+      content: "\2190";
+      font-size: 1.05rem;
+      line-height: 1;
+    }
+
+    .chat-head h2 {
+      margin: 0 0 8px;
+      font-size: 1.55rem;
+    }
+
+    .status {
+      min-height: 1.4rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    .chat-log {
+      flex: 1;
+      padding: 22px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow-y: auto;
+      background:
+        linear-gradient(180deg, rgba(250, 247, 240, 0.78), rgba(246, 243, 234, 0.45));
+    }
+
+    .message {
+      max-width: 85%;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 24px rgba(34, 39, 29, 0.06);
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background: #fffdfa;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: var(--user-soft);
+      border-color: rgba(17, 60, 73, 0.12);
+      color: var(--user);
+    }
+    .sources {
+      margin-top: 8px;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+    .sources a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 700;
+      margin-right: 12px;
+    }
+
+    .composer {
+      padding: 20px 28px 28px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 253, 248, 0.96);
+    }
+
+    .composer form {
+      display: grid;
+      gap: 14px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      font: inherit;
+      color: var(--ink);
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(13, 110, 110, 0.14);
+    }
+
+    .composer-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 0.94rem;
+      line-height: 1.5;
+    }
+
+    button {
+      border: 0;
+      border-radius: 16px;
+      padding: 14px 20px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 12px 24px rgba(13, 110, 110, 0.18);
+    }
+
+    button:disabled {
+      opacity: 0.7;
+      cursor: wait;
+    }
+
+    @media (max-width: 920px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+
+      .chat-panel {
+        min-height: 640px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <section class="panel intro">
+        <span class="eyebrow">AI Assistant</span>
+        <h1>Ask any question for quick help.</h1>
+        <p class="lead">
+          This chatbot can answer general questions and help with school or attendance-related tasks
+          from inside EduConnect.
+        </p>
+
+        <ul class="tip-list">
+          <li><strong>Knowledge source:</strong> Wikipedia search results are used as live reference data.</li>
+          <li><strong>Try:</strong> "Ask any question about coding."</li>
+          <li><strong>Try:</strong> "Write a polite leave application for a student."</li>
+          <li><strong>Try:</strong> "How can I improve my attendance habits?"</li>
+        </ul>
+      </section>
+
+      <section class="panel chat-panel">
+        <div class="chat-head">
+          <a class="top-link" href="{% url 'dashboard' %}">Back to Dashboard</a>
+          <h2>EduConnect Chatbot</h2>
+          <div id="status" class="status">Ready for your question.</div>
+        </div>
+
+        <div id="chatLog" class="chat-log"></div>
+
+        <div class="composer">
+          <form id="chatForm">
+            {% csrf_token %}
+            <textarea
+              id="prompt"
+              name="prompt"
+              placeholder="Ask anything..."
+              required
+            ></textarea>
+            <div class="composer-row">
+              <button id="sendButton" type="submit">Send Message</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const chatForm = document.getElementById("chatForm");
+    const promptInput = document.getElementById("prompt");
+    const sendButton = document.getElementById("sendButton");
+    const chatLog = document.getElementById("chatLog");
+    const statusEl = document.getElementById("status");
+    const messages = [
+      {
+        role: "assistant",
+        content: "Hello. Ask me any question and I will do my best to help.",
+        sources: []
+      }
+    ];
+
+    function renderMessages() {
+      chatLog.innerHTML = "";
+      for (const message of messages) {
+        const bubble = document.createElement("div");
+        bubble.className = `message ${message.role}`;
+        bubble.textContent = message.content;
+        if (message.sources && message.sources.length) {
+          const sources = document.createElement("div");
+          sources.className = "sources";
+          sources.append("Sources: ");
+          for (const source of message.sources) {
+            const link = document.createElement("a");
+            link.href = source.url;
+            link.target = "_blank";
+            link.rel = "noreferrer";
+            link.textContent = source.title;
+            sources.appendChild(link);
+          }
+          bubble.appendChild(sources);
+        }
+        chatLog.appendChild(bubble);
+      }
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function setStatus(text, isError = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle("error", isError);
+    }
+
+    chatForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const prompt = promptInput.value.trim();
+      if (!prompt) {
+        return;
+      }
+
+      messages.push({ role: "user", content: prompt });
+      renderMessages();
+      promptInput.value = "";
+      promptInput.focus();
+      sendButton.disabled = true;
+      setStatus("Thinking...");
+
+      try {
+        const response = await fetch("{% url 'chatbot_api' %}", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ messages })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Chat request failed.");
+        }
+
+        messages.push({ role: "assistant", content: data.answer, sources: data.sources || [] });
+        renderMessages();
+        setStatus(`Answered using ${data.model || "the configured model"}.`);
+      } catch (error) {
+        messages.push({
+          role: "assistant",
+          content: `I could not answer that right now. ${error.message}`,
+          sources: []
+        });
+        renderMessages();
+        setStatus(error.message, true);
+      } finally {
+        sendButton.disabled = false;
+      }
+    });
+
+    renderMessages();
+  </script>
+</body>
+</html>

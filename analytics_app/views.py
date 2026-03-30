@@ -1,5 +1,9 @@
 import json
 import os
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
 
 import joblib
 import numpy as np
@@ -15,6 +19,21 @@ from .models import AttendanceRecord, Student
 
 PRESENT_STATUSES = {"present", "late", "left early", "excused"}
 ABSENT_STATUSES = {"absent", "absnt"}
+STUDENT_CSV_COLUMNS = [
+    "Student_ID",
+    "Full_Name",
+    "Date_of_Birth",
+    "Grade_Level",
+    "Emergency_Contact",
+    "Secondary_Contact",
+]
+CHATBOT_SYSTEM_PROMPT = (
+    "You are EduConnect Assistant, a helpful general-purpose chatbot inside a student "
+    "attendance application. Answer the user's question clearly and directly. If the "
+    "question is about attendance or students, be especially practical. If you are not "
+    "sure, say so instead of inventing facts."
+)
+WIKIPEDIA_SEARCH_URL = "https://en.wikipedia.org/w/rest.php/v1/search/page"
 
 
 def _project_csv_path(filename):
@@ -26,8 +45,7 @@ def _normalize_status(value):
 
 
 def _load_students_csv():
-    path = _project_csv_path("students.csv")
-    df = pd.read_csv(path)
+    df = _load_students_csv_raw()
     df = df.rename(
         columns={
             "Student_ID": "roll_number",
@@ -37,6 +55,29 @@ def _load_students_csv():
     df["roll_number"] = df["roll_number"].astype(str).str.strip()
     df["name"] = df["name"].fillna("").astype(str).str.strip()
     return df[["roll_number", "name"]]
+
+
+def _load_students_csv_raw():
+    path = _project_csv_path("students.csv")
+    df = pd.read_csv(path)
+    if "Unnamed: 5" in df.columns and "Secondary_Contact" not in df.columns:
+        df = df.rename(columns={"Unnamed: 5": "Secondary_Contact"})
+
+    for column in STUDENT_CSV_COLUMNS:
+        if column not in df.columns:
+            df[column] = ""
+
+    return df[STUDENT_CSV_COLUMNS].fillna("")
+
+
+def _save_students_csv_raw(df):
+    path = _project_csv_path("students.csv")
+    normalized = df.copy()
+    for column in STUDENT_CSV_COLUMNS:
+        if column not in normalized.columns:
+            normalized[column] = ""
+    normalized = normalized[STUDENT_CSV_COLUMNS].fillna("")
+    normalized.to_csv(path, index=False)
 
 
 def _load_attendance_csv():
@@ -170,6 +211,182 @@ def _find_student_features_by_name(student_name):
     }
 
 
+def _student_payload_from_row(row):
+    return {
+        "roll_number": str(row.get("Student_ID", "")).strip(),
+        "name": str(row.get("Full_Name", "")).strip(),
+        "date_of_birth": "" if pd.isna(row.get("Date_of_Birth")) else str(row.get("Date_of_Birth")).strip(),
+        "grade_level": "" if pd.isna(row.get("Grade_Level")) else str(row.get("Grade_Level")).strip(),
+        "emergency_contact": "" if pd.isna(row.get("Emergency_Contact")) else str(row.get("Emergency_Contact")).strip(),
+        "secondary_contact": "" if pd.isna(row.get("Secondary_Contact")) else str(row.get("Secondary_Contact")).strip(),
+    }
+
+
+def _extract_response_text(response_json):
+    for item in response_json.get("output", []):
+        if item.get("type") != "message":
+            continue
+        parts = []
+        for content in item.get("content", []):
+            if content.get("type") == "output_text":
+                text = str(content.get("text", "")).strip()
+                if text:
+                    parts.append(text)
+        if parts:
+            return "\n\n".join(parts)
+    return ""
+
+
+def _strip_html(value):
+    return re.sub(r"<[^>]+>", "", str(value or "")).strip()
+
+
+def _fetch_wikipedia_context(query, limit=3):
+    params = urllib.parse.urlencode({"q": query, "limit": limit})
+    url = f"{WIKIPEDIA_SEARCH_URL}?{params}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "EduConnect/1.0 (Wikipedia knowledge lookup)"
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            "Wikipedia could not be reached right now. Check your internet connection."
+        ) from exc
+
+    pages = []
+    for page in data.get("pages", [])[:limit]:
+        title = str(page.get("title", "")).strip()
+        key = str(page.get("key", "")).strip()
+        excerpt = _strip_html(page.get("excerpt", ""))
+        description = str(page.get("description", "") or "").strip()
+        if not title:
+            continue
+        pages.append(
+            {
+                "title": title,
+                "description": description,
+                "excerpt": excerpt,
+                "url": f"https://en.wikipedia.org/wiki/{urllib.parse.quote(key or title.replace(' ', '_'))}",
+            }
+        )
+    return pages
+
+
+def _format_wikipedia_context(pages):
+    lines = []
+    for index, page in enumerate(pages, start=1):
+        pieces = [f"{index}. {page['title']}"]
+        if page["description"]:
+            pieces.append(f"Description: {page['description']}")
+        if page["excerpt"]:
+            pieces.append(f"Excerpt: {page['excerpt']}")
+        pieces.append(f"URL: {page['url']}")
+        lines.append("\n".join(pieces))
+    return "\n\n".join(lines)
+
+
+def _build_wikipedia_fallback_answer(query, pages):
+    if not pages:
+        return {
+            "answer": (
+                f'I could not find a matching Wikipedia result for "{query}". '
+                "Try a more specific question or set OPENAI_API_KEY for a broader chatbot answer."
+            ),
+            "model": "wikipedia-search",
+            "sources": [],
+        }
+
+    top = pages[0]
+    answer_parts = [f"According to Wikipedia, {top['title']}"]
+    if top["description"]:
+        answer_parts.append(f"is {top['description'].lower()}")
+    if top["excerpt"]:
+        answer_parts.append(top["excerpt"])
+
+    answer = ". ".join(part.rstrip(".") for part in answer_parts if part).strip() + "."
+    if len(pages) > 1:
+        answer += " I also found related pages you can open for more detail."
+
+    return {
+        "answer": answer,
+        "model": "wikipedia-search",
+        "sources": [{"title": page["title"], "url": page["url"]} for page in pages],
+    }
+
+
+def _chatbot_reply(messages):
+    last_user_message = next(
+        (message["content"] for message in reversed(messages) if message.get("role") == "user"),
+        "",
+    )
+    wikipedia_pages = _fetch_wikipedia_context(last_user_message, limit=3) if last_user_message else []
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return _build_wikipedia_fallback_answer(last_user_message, wikipedia_pages)
+
+    model = os.environ.get("OPENAI_CHAT_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+    input_messages = list(messages)
+    if wikipedia_pages:
+        input_messages.append(
+            {
+                "role": "developer",
+                "content": (
+                    "Use the following Wikipedia search context when it is relevant. "
+                    "Do not claim certainty beyond this context. Cite the article titles naturally in the answer.\n\n"
+                    f"{_format_wikipedia_context(wikipedia_pages)}"
+                ),
+            }
+        )
+    payload = {
+        "model": model,
+        "instructions": CHATBOT_SYSTEM_PROMPT,
+        "input": input_messages,
+        "text": {"format": {"type": "text"}},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/responses",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            response_json = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        try:
+            error_json = json.loads(details)
+            message = error_json.get("error", {}).get("message") or details
+        except json.JSONDecodeError:
+            message = details or str(exc)
+        raise RuntimeError(f"Chatbot request failed: {message}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(
+            "The chatbot could not reach the AI service. Check your internet connection."
+        ) from exc
+
+    answer = _extract_response_text(response_json)
+    if not answer:
+        raise RuntimeError("The chatbot did not return any text.")
+    return {
+        "answer": answer,
+        "model": response_json.get("model", model),
+        "sources": [{"title": page["title"], "url": page["url"]} for page in wikipedia_pages],
+    }
+
+
 @csrf_exempt
 def predict_risk(request):
     model_path = os.path.join(settings.BASE_DIR, "analytics_app", "model.pkl")
@@ -188,6 +405,107 @@ def predict_risk(request):
                 "risk_probability": float(probability),
             }
         )
+
+
+@csrf_exempt
+def students_api(request):
+    if request.method == "GET":
+        try:
+            students_df = _load_students_csv_raw()
+        except FileNotFoundError as exc:
+            return JsonResponse({"error": "CSV file not found", "path": str(exc)}, status=404)
+
+        students = [_student_payload_from_row(row) for _, row in students_df.iterrows()]
+        return JsonResponse({"count": len(students), "students": students})
+
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Request body must be valid JSON"}, status=400)
+
+    roll_number = str(data.get("roll_number", "")).strip().upper()
+    name = str(data.get("name", "")).strip()
+    date_of_birth = str(data.get("date_of_birth", "")).strip()
+    grade_level = str(data.get("grade_level", "")).strip()
+    emergency_contact = str(data.get("emergency_contact", "")).strip()
+    secondary_contact = str(data.get("secondary_contact", "")).strip()
+
+    if not roll_number:
+        return JsonResponse({"error": "roll_number is required"}, status=400)
+    if not name:
+        return JsonResponse({"error": "name is required"}, status=400)
+
+    try:
+        students_df = _load_students_csv_raw()
+    except FileNotFoundError as exc:
+        return JsonResponse({"error": "CSV file not found", "path": str(exc)}, status=404)
+
+    existing_roll_numbers = (
+        students_df["Student_ID"].fillna("").astype(str).str.strip().str.upper()
+        if "Student_ID" in students_df.columns
+        else pd.Series(dtype=str)
+    )
+    if existing_roll_numbers.eq(roll_number).any():
+        return JsonResponse(
+            {"error": f"Student with roll_number {roll_number} already exists"},
+            status=409,
+        )
+
+    new_row = {
+        "Student_ID": roll_number,
+        "Full_Name": name,
+        "Date_of_Birth": date_of_birth,
+        "Grade_Level": grade_level,
+        "Emergency_Contact": emergency_contact,
+        "Secondary_Contact": secondary_contact,
+    }
+    students_df = pd.concat([students_df, pd.DataFrame([new_row])], ignore_index=True)
+    _save_students_csv_raw(students_df)
+
+    created_student = _student_payload_from_row(new_row)
+    return JsonResponse({"message": "Student created", "student": created_student}, status=201)
+
+
+def chatbot_page(request):
+    return render(request, "analytics_app/chatbot.html")
+
+
+@csrf_exempt
+def chatbot_api(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Request body must be valid JSON"}, status=400)
+
+    raw_messages = data.get("messages", [])
+    if not isinstance(raw_messages, list) or not raw_messages:
+        return JsonResponse({"error": "messages must be a non-empty list"}, status=400)
+
+    messages = []
+    for message in raw_messages[-12:]:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role", "")).strip().lower()
+        content = str(message.get("content", "")).strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        messages.append({"role": role, "content": content})
+
+    if not messages or messages[-1]["role"] != "user":
+        return JsonResponse({"error": "The final message must be a user message"}, status=400)
+
+    try:
+        result = _chatbot_reply(messages)
+    except RuntimeError as exc:
+        return JsonResponse({"error": str(exc)}, status=503)
+
+    return JsonResponse(result)
 
 
 def dashboard(request):
